@@ -90,7 +90,7 @@ with tab1:
         with col_upload1:
             doc_file = st.file_uploader("📄 Upload travel document (passport / visa / ID)", type=["jpg", "jpeg", "png"])
             if doc_file:
-                st.image(doc_file, caption="Uploaded document", use_container_width=True)
+                st.image(doc_file, caption="Uploaded document")
 
         with col_upload2:
             face_file = st.file_uploader("🧑 Upload traveler's photo", type=["jpg", "jpeg", "png"])
