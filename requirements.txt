@@ -1,14 +1,15 @@
-streamlit==1.62.0
-numpy<2
+streamlit>=1.36
+numpy>=1.24
 opencv-python-headless>=4.9
 Pillow>=10.0
 
-easyocr==1.7.2
-pytesseract==0.3.13
+easyocr>=1.7.1
+pytesseract>=0.3.10
 
-deepface==0.0.100
-tf-keras==2.21.0
-insightface==0.7.3
-onnxruntime==1.29.0
+deepface==0.0.93
+tf-keras>=2.16
+
+insightface>=0.7.3
+onnxruntime>=1.17
 
 pandas>=2.0
