@@ -27,7 +27,7 @@ def load_image(uploaded_file) -> np.ndarray:
 
 def verdict_badge(verdict: str, risk_score: float):
     if verdict == "PASS":
-        st.success(f"✅ **PASS** — Risk Score: {risk_score:.1f} / 100")
+        st.success(f"**PASS** — Risk Score: {risk_score:.1f} / 100")
     else:
         st.error(f"🚩 **FLAGGED FOR REVIEW** — Risk Score: {risk_score:.1f} / 100")
 
@@ -37,7 +37,7 @@ def score_bar(label: str, value: float, help_text: str = ""):
     st.progress(min(max(value / 100, 0.0), 1.0))
 
 with st.sidebar:
-    st.title("🛂 Screening Config")
+    st.title("Screening Config")
     st.caption("AI-Based Fake Identity & Document Screening System")
 
     st.subheader("Engines")
@@ -72,12 +72,12 @@ _face_pref = {"auto (DeepFace → InsightFace)": "auto", "deepface": "deepface",
 st.title("AI-Based Fake Identity & Document Screening System")
 st.caption("Real-time forgery detection for passports, visas & IDs at border checkpoints · Ministry of Home Affairs — Sashastra Seema Bal")
 
-tab1, tab2, tab3 = st.tabs(["📄 Single Document Screening", "🗂️ Batch Evaluation Mode", "📜 Screening History"])
+tab1, tab2 = st.tabs(["Single Document Screening", "Screening History"])
 
 with tab1:
     input_mode = st.radio(
         "Choose input method",
-        ["📁 Upload Files", "📷 Use Camera"],
+        ["Upload Files", "Use Camera"],
         horizontal=True,
         help="Upload images from disk, or scan documents and capture face photos live using your device camera.",
     )
@@ -85,27 +85,27 @@ with tab1:
     doc_file = None
     face_file = None
 
-    if input_mode == "📁 Upload Files":
+    if input_mode == "Upload Files":
         col_upload1, col_upload2 = st.columns(2)
         with col_upload1:
-            doc_file = st.file_uploader("📄 Upload travel document (passport / visa / ID)", type=["jpg", "jpeg", "png"])
+            doc_file = st.file_uploader("Upload travel document (passport / visa / ID)", type=["jpg", "jpeg", "png"])
             if doc_file:
                 st.image(doc_file, caption="Uploaded document")
 
         with col_upload2:
-            face_file = st.file_uploader("🧑 Upload traveler's photo", type=["jpg", "jpeg", "png"])
+            face_file = st.file_uploader("Upload traveler's photo", type=["jpg", "jpeg", "png"])
             if face_file:
-                st.image(face_file, caption="Traveler photo", use_container_width=True)
+                st.image(face_file, caption="Traveler photo")
 
     else: 
         col_cam1, col_cam2 = st.columns(2)
         with col_cam1:
-            st.markdown("#### 📄 Scan Travel Document")
+            st.markdown("#### Scan Travel Document")
             st.caption("Hold the passport / visa / ID card in front of your camera and take a photo.")
             doc_file = st.camera_input("Capture document image", key="cam_doc")
 
         with col_cam2:
-            st.markdown("#### 🧑 Capture Traveler's Face")
+            st.markdown("#### Capture Traveler's Face")
             st.caption("Position the traveler in front of the camera and take a photo.")
             face_file = st.camera_input("Capture traveler face", key="cam_face")
 
@@ -192,12 +192,12 @@ with tab1:
                 score_bar("Face-Match Score", face_result.match_score, "Higher = more likely same person")
             else:
                 st.metric("Face-Match Score", "N/A")
-                st.caption(f"⚠️ {face_result.error}")
+                st.caption(f"{face_result.error}")
 
         st.divider()
 
         # Extracted fields 
-        st.header("📄 Extracted Fields")
+        st.header("Extracted Fields")
         st.caption(f"OCR engine used: **{ocr_result.engine_used}** · {ocr_time:.2f}s")
         if ocr_result.error:
             st.warning(ocr_result.error)
@@ -229,7 +229,7 @@ with tab1:
         st.divider()
 
         #  Validation checks
-        st.header("✅ Document Validation Checks")
+        st.header("Document Validation Checks")
         for check in validation_result.checks:
             icon = "✅" if check.passed else "❌"
             st.write(f"{icon} **{check.name}** — {check.detail}")
@@ -237,7 +237,7 @@ with tab1:
         st.divider()
 
         #  Tamper heatmap 
-        st.header("🔥 Tampering Detection (Error Level Analysis)")
+        st.header("Tampering Detection (Error Level Analysis)")
         tcol1, tcol2 = st.columns(2)
         with tcol1:
             st.image(doc_image, caption="Original document", use_container_width=True)
@@ -258,7 +258,7 @@ with tab1:
         st.divider()
 
         #  Face verification 
-        st.header("🧑‍🤝‍🧑 Face Verification")
+        st.header("Face Verification")
         st.caption(f"Engine used: **{face_result.engine_used}** · {face_time:.2f}s")
         fvcol1, fvcol2 = st.columns(2)
         with fvcol1:
@@ -281,7 +281,7 @@ with tab1:
         st.divider()
 
         #  Risk breakdown 
-        st.header("⚖️ Risk Score Breakdown")
+        st.header("Risk Score Breakdown")
         st.latex(
             r"\text{Risk} = %.2f \times (100 - \text{Validation}) + %.2f \times \text{Tamper} + %.2f \times (100 - \text{FaceMatch})"
             % (weights["validation"], weights["tamper"], weights["face"])
@@ -294,16 +294,11 @@ with tab1:
 
     else:
         st.markdown("""
-        ### How it works
-        1. **OCR Extraction** — EasyOCR/Tesseract reads the document, including the Machine-Readable Zone (MRZ).
-        2. **Document Validation** — rule-based date logic, format checks, and MRZ checksum validation.
-        3. **Tampering Detection** — Error Level Analysis (ELA) highlights digitally edited regions as a heatmap.
-        4. **Face Verification** — DeepFace/InsightFace compares the document photo to the traveler's live photo.
-        5. **Risk Scoring** — the three signals combine into a single 0–100 Risk Score with a PASS / FLAG verdict.
+        
         """)
 
 with tab2:
-    st.header("📜 Screening History")
+    st.header("Screening History")
     st.markdown("A persistent audit log of all past screenings, stored in a local SQLite database.")
 
     history = get_history(limit=200)
@@ -322,7 +317,7 @@ with tab2:
         st.dataframe(df_hist, use_container_width=True)
 
         # Summary stats
-        st.subheader("📊 Summary")
+        st.subheader("Summary")
         s_col1, s_col2, s_col3, s_col4 = st.columns(4)
         s_col1.metric("Total Screenings", len(history))
         flagged = sum(1 for r in history if r.get("verdict") == "FLAG FOR REVIEW")
