@@ -1,13 +1,3 @@
-"""
-AI-Based Fake Identity & Document Screening System
-SIH26188 — Ministry of Home Affairs / Sashastra Seema Bal (Border Security)
-
-Streamlit dashboard: upload a travel document + a face photo, run the
-five-stage pipeline (OCR -> Validation -> Tamper detection ->
-Face verification -> Risk scoring), and show a PASS / FLAG FOR REVIEW
-verdict with full supporting evidence for a human officer.
-"""
-
 import time
 
 import numpy as np
@@ -24,7 +14,7 @@ from scripts.evaluate_pipeline import run_batch_evaluation, compute_evaluation_m
 from utils.screening_history import log_screening, get_history, clear_history
 
 st.set_page_config(
-    page_title="Document Screening System — SIH26188",
+    page_title="Document Screening System",
     page_icon="🛂",
     layout="wide",
 )
@@ -46,13 +36,9 @@ def score_bar(label: str, value: float, help_text: str = ""):
     st.metric(label, f"{value:.1f} / 100", help=help_text)
     st.progress(min(max(value / 100, 0.0), 1.0))
 
-
-# ----------------------------------------------------------------------
-# Sidebar — configuration
-# ----------------------------------------------------------------------
 with st.sidebar:
     st.title("🛂 Screening Config")
-    st.caption("SIH26188 · AI-Based Fake Identity & Document Screening System")
+    st.caption("AI-Based Fake Identity & Document Screening System")
 
     st.subheader("Engines")
     ocr_engine = st.selectbox("OCR engine", ["auto (EasyOCR → Tesseract)", "easyocr", "tesseract"], index=0)
@@ -78,22 +64,17 @@ with st.sidebar:
     ela_scale = st.slider("ELA amplification", 1.0, 30.0, 15.0, 0.5)
 
     st.divider()
-    st.caption("Every module uses pretrained models or classical CV — nothing is trained from scratch.")
 
 _ocr_pref = {"auto (EasyOCR → Tesseract)": "auto", "easyocr": "easyocr", "tesseract": "tesseract"}[ocr_engine]
 _face_pref = {"auto (DeepFace → InsightFace)": "auto", "deepface": "deepface", "insightface": "insightface"}[face_engine]
 
-
-# ----------------------------------------------------------------------
 # Main UI
-# ----------------------------------------------------------------------
 st.title("AI-Based Fake Identity & Document Screening System")
 st.caption("Real-time forgery detection for passports, visas & IDs at border checkpoints · Ministry of Home Affairs — Sashastra Seema Bal")
 
 tab1, tab2, tab3 = st.tabs(["📄 Single Document Screening", "🗂️ Batch Evaluation Mode", "📜 Screening History"])
 
 with tab1:
-    # --- Input mode selection ---
     input_mode = st.radio(
         "Choose input method",
         ["📁 Upload Files", "📷 Use Camera"],
@@ -116,7 +97,7 @@ with tab1:
             if face_file:
                 st.image(face_file, caption="Traveler photo", use_container_width=True)
 
-    else:  # Camera mode
+    else: 
         col_cam1, col_cam2 = st.columns(2)
         with col_cam1:
             st.markdown("#### 📄 Scan Travel Document")
@@ -133,9 +114,8 @@ with tab1:
     if not (doc_file and face_file):
         st.info("Provide both a document image and a traveler photo (via upload or camera) to run the pipeline.")
 
-    # ----------------------------------------------------------------------
+
     # Pipeline execution
-    # ----------------------------------------------------------------------
     if run:
         doc_image = load_image(doc_file)
         face_image = load_image(face_file)
@@ -216,7 +196,7 @@ with tab1:
 
         st.divider()
 
-        # --- Extracted fields --------------------------------------------
+        # Extracted fields 
         st.header("📄 Extracted Fields")
         st.caption(f"OCR engine used: **{ocr_result.engine_used}** · {ocr_time:.2f}s")
         if ocr_result.error:
@@ -248,7 +228,7 @@ with tab1:
 
         st.divider()
 
-        # --- Validation checks ---------------------------------------------
+        #  Validation checks
         st.header("✅ Document Validation Checks")
         for check in validation_result.checks:
             icon = "✅" if check.passed else "❌"
@@ -256,7 +236,7 @@ with tab1:
 
         st.divider()
 
-        # --- Tamper heatmap --------------------------------------------------
+        #  Tamper heatmap 
         st.header("🔥 Tampering Detection (Error Level Analysis)")
         tcol1, tcol2 = st.columns(2)
         with tcol1:
@@ -277,7 +257,7 @@ with tab1:
 
         st.divider()
 
-        # --- Face verification --------------------------------------------
+        #  Face verification 
         st.header("🧑‍🤝‍🧑 Face Verification")
         st.caption(f"Engine used: **{face_result.engine_used}** · {face_time:.2f}s")
         fvcol1, fvcol2 = st.columns(2)
@@ -300,7 +280,7 @@ with tab1:
 
         st.divider()
 
-        # --- Risk breakdown ---------------------------------------------
+        #  Risk breakdown 
         st.header("⚖️ Risk Score Breakdown")
         st.latex(
             r"\text{Risk} = %.2f \times (100 - \text{Validation}) + %.2f \times \text{Tamper} + %.2f \times (100 - \text{FaceMatch})"
@@ -320,8 +300,6 @@ with tab1:
         3. **Tampering Detection** — Error Level Analysis (ELA) highlights digitally edited regions as a heatmap.
         4. **Face Verification** — DeepFace/InsightFace compares the document photo to the traveler's live photo.
         5. **Risk Scoring** — the three signals combine into a single 0–100 Risk Score with a PASS / FLAG verdict.
-
-        Every stage uses pretrained models or classical computer vision — **nothing is trained from scratch**.
         """)
 
 with tab2:
