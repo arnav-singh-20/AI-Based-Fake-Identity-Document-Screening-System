@@ -1,0 +1,23 @@
+filename,ground_truth,validation_score,tamper_score,face_match_score,risk_score,verdict,notes
+alb_id_00.jpg,genuine,66.66666666666667,21.720334522966358,100.0,12.172033452296635,PASS,Self face verification baseline; No MRZ found
+alb_id_01.jpg,genuine,66.66666666666667,22.041421429414594,100.0,12.204142142941457,PASS,Self face verification baseline; No MRZ found
+alb_id_02.jpg,genuine,66.66666666666667,21.62006697051366,100.0,12.162006697051364,PASS,Self face verification baseline; No MRZ found
+alb_id_03.jpg,genuine,66.66666666666667,22.08487604284519,100.0,12.208487604284517,PASS,Self face verification baseline; No MRZ found
+aze_passport_00.jpg,genuine,88.88888888888889,14.156527833350196,100.0,4.748986116668354,PASS,Self face verification baseline
+aze_passport_01.jpg,genuine,77.77777777777777,13.351564794757643,100.0,8.001823146142433,PASS,Self face verification baseline
+aze_passport_02.jpg,genuine,88.88888888888889,15.17684387369654,100.0,4.8510177207029885,PASS,Self face verification baseline
+aze_passport_03.jpg,genuine,77.77777777777777,14.614136425689328,100.0,8.128080309235601,PASS,Self face verification baseline
+esp_id_00.jpg,genuine,66.66666666666667,16.95154719363117,100.0,11.695154719363115,PASS,Self face verification baseline; No MRZ found
+esp_id_01.jpg,genuine,66.66666666666667,16.656701113901228,100.0,11.66567011139012,PASS,Self face verification baseline; No MRZ found
+esp_id_02.jpg,genuine,66.66666666666667,17.679148040324883,100.0,11.767914804032486,PASS,Self face verification baseline; No MRZ found
+alb_id_00.jpg,forged,66.66666666666667,8.731059309951526,100.0,10.87310593099515,PASS,Self face verification baseline; No MRZ found
+alb_id_01.jpg,forged,66.66666666666667,9.041818475184808,100.0,10.90418184751848,PASS,Self face verification baseline; No MRZ found
+alb_id_02.jpg,forged,66.66666666666667,8.641536013993518,100.0,10.86415360139935,PASS,Self face verification baseline; No MRZ found
+alb_id_03.jpg,forged,66.66666666666667,8.942370682981196,100.0,10.894237068298118,PASS,Self face verification baseline; No MRZ found
+aze_passport_00.jpg,forged,66.66666666666667,5.466434469770137,100.0,10.546643446977011,PASS,Self face verification baseline; No MRZ found
+aze_passport_01.jpg,forged,66.66666666666667,5.213345419376301,100.0,10.521334541937629,PASS,Self face verification baseline; No MRZ found
+aze_passport_02.jpg,forged,66.66666666666667,5.574672822174391,100.0,10.557467282217438,PASS,Self face verification baseline; No MRZ found
+aze_passport_03.jpg,forged,66.66666666666667,5.385206995762698,100.0,10.538520699576267,PASS,Self face verification baseline; No MRZ found
+esp_id_00.jpg,forged,66.66666666666667,7.035821233876334,100.0,10.703582123387632,PASS,Self face verification baseline; No MRZ found
+esp_id_01.jpg,forged,66.66666666666667,7.062235676496469,100.0,10.706223567649644,PASS,Self face verification baseline; No MRZ found
+esp_id_02.jpg,forged,66.66666666666667,7.351736638090946,100.0,10.735173663809093,PASS,Self face verification baseline; No MRZ found

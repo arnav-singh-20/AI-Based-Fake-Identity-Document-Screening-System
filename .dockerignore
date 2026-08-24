@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+dataset/
+screening_history.db
+.streamlit/
+*.egg-info/
+.pytest_cache/

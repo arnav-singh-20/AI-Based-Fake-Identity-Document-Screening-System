@@ -1,0 +1,17 @@
+{
+  "weights": {
+    "validation": 0.30,
+    "tamper": 0.10,
+    "face": 0.60
+  },
+  "threshold": 25.0,
+  "engines": {
+    "ocr": "auto",
+    "face": "auto"
+  },
+  "ela": {
+    "jpeg_quality": 90,
+    "scale": 15.0,
+    "hotspot_threshold": 60
+  }
+}
