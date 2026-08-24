@@ -1,19 +1,14 @@
-# AI-Based Fake Identity & Document Screening System — SIH26188
-# Core
-streamlit>=1.36
-numpy>=1.24
+streamlit==1.62.0
+numpy<2
 opencv-python-headless>=4.9
 Pillow>=10.0
 
-# OCR (at least one required; both recommended for the auto fallback)
-easyocr>=1.7.1
-pytesseract>=0.3.10        # also requires the tesseract-ocr system binary — see README
+easyocr==1.7.2
+pytesseract==0.3.13
 
-# Face verification (at least one required; both recommended for the auto fallback)
-deepface>=0.0.93
-tf-keras>=2.16              # DeepFace's Facenet512 backend needs this on TF>=2.16
-insightface>=0.7.3
-onnxruntime>=1.17            # InsightFace inference backend
+deepface==0.0.100
+tf-keras==2.21.0
+insightface==0.7.3
+onnxruntime==1.29.0
 
-# Utilities
 pandas>=2.0
