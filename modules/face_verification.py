@@ -74,7 +74,7 @@ def _verify_deepface(
             img2_path=live_face,
 
             # Lighter model than Facenet512
-            model_name="VGG-Face",
+            model_name="GhostFaceNet",
 
             # Fastest/simple detector
             detector_backend="opencv",
