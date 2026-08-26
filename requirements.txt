@@ -3,7 +3,6 @@ numpy==1.26.4
 opencv-python-headless==4.10.0.84
 Pillow==10.4.0
 
-easyocr==1.7.1
 pytesseract==0.3.10
 
 pandas==2.2.2
