@@ -1,30 +1,23 @@
 """
 Step 5 — Face Verification
 
-Compares the face extracted from the document with the uploaded/live
-traveler photo.
+Lightweight face verification designed for Streamlit Cloud.
 
-Uses DeepFace with a lightweight model and lazy initialization.
+Uses OpenCV Haar Cascade to detect faces and compares normalized
+face regions using histogram correlation and structural similarity.
 
-Designed to run on CPU-only environments such as Streamlit Cloud.
-
-Outputs a Face-Match Score (0-100).
+This implementation avoids DeepFace, TensorFlow, InsightFace,
+and large model downloads.
 """
 
-import os
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
+import cv2
 import numpy as np
 
-# Reduce TensorFlow logs and unnecessary GPU initialization noise
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
 logger = logging.getLogger(__name__)
-
-_DEEPFACE_AVAILABLE = None
 
 
 @dataclass
@@ -42,137 +35,254 @@ class FaceMatchResult:
     error: Optional[str] = None
 
 
-def _deepface_available() -> bool:
+def _get_face_detector():
     """
-    Check whether DeepFace is installed.
-    """
-
-    global _DEEPFACE_AVAILABLE
-
-    if _DEEPFACE_AVAILABLE is None:
-
-        try:
-            from deepface import DeepFace  # noqa: F401
-
-            _DEEPFACE_AVAILABLE = True
-
-        except Exception as e:
-
-            logger.warning(
-                "DeepFace unavailable: %s",
-                e
-            )
-
-            _DEEPFACE_AVAILABLE = False
-
-    return _DEEPFACE_AVAILABLE
-
-
-def _calculate_score(
-    distance: float,
-    threshold: float
-) -> float:
-    """
-    Convert DeepFace distance into a 0-100 similarity score.
-
-    Lower distance means higher similarity.
+    Load OpenCV's built-in Haar Cascade face detector.
     """
 
-    if threshold <= 0:
-        threshold = 0.4
-
-    score = 1.0 - (
-        distance / (threshold * 2)
+    cascade_path = (
+        cv2.data.haarcascades
+        + "haarcascade_frontalface_default.xml"
     )
 
-    score = np.clip(
-        score * 100,
+    detector = cv2.CascadeClassifier(cascade_path)
+
+    if detector.empty():
+        raise RuntimeError(
+            "Unable to load OpenCV face detector."
+        )
+
+    return detector
+
+
+def _extract_largest_face(image: np.ndarray):
+    """
+    Detect and return the largest face from an RGB image.
+
+    Returns:
+        face_image, face_found
+    """
+
+    if image is None or image.size == 0:
+        return None, False
+
+    # Convert RGB to grayscale
+    gray = cv2.cvtColor(
+        image,
+        cv2.COLOR_RGB2GRAY
+    )
+
+    detector = _get_face_detector()
+
+    faces = detector.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(40, 40)
+    )
+
+    if len(faces) == 0:
+        return None, False
+
+    # Select largest detected face
+    x, y, w, h = max(
+        faces,
+        key=lambda f: f[2] * f[3]
+    )
+
+    face = gray[y:y + h, x:x + w]
+
+    return face, True
+
+
+def _normalize_face(face: np.ndarray) -> np.ndarray:
+    """
+    Resize and normalize a face for comparison.
+    """
+
+    face = cv2.resize(
+        face,
+        (128, 128)
+    )
+
+    face = cv2.equalizeHist(face)
+
+    return face
+
+
+def _compare_faces(
+    face1: np.ndarray,
+    face2: np.ndarray
+):
+    """
+    Compare two detected face regions.
+
+    Uses:
+    1. Histogram correlation
+    2. Mean Squared Error
+    3. Normalized pixel correlation
+
+    Returns a score between 0 and 100.
+    """
+
+    face1 = _normalize_face(face1)
+    face2 = _normalize_face(face2)
+
+    # Histogram comparison
+    hist1 = cv2.calcHist(
+        [face1],
+        [0],
+        None,
+        [256],
+        [0, 256]
+    )
+
+    hist2 = cv2.calcHist(
+        [face2],
+        [0],
+        None,
+        [256],
+        [0, 256]
+    )
+
+    cv2.normalize(hist1, hist1)
+    cv2.normalize(hist2, hist2)
+
+    histogram_similarity = cv2.compareHist(
+        hist1,
+        hist2,
+        cv2.HISTCMP_CORREL
+    )
+
+    # Convert -1...1 to 0...100
+    histogram_score = (
+        (histogram_similarity + 1) / 2
+    ) * 100
+
+    # Pixel correlation
+    correlation = np.corrcoef(
+        face1.flatten(),
+        face2.flatten()
+    )[0, 1]
+
+    if np.isnan(correlation):
+        correlation = 0
+
+    correlation_score = (
+        (correlation + 1) / 2
+    ) * 100
+
+    # Mean squared error
+    mse = np.mean(
+        (
+            face1.astype("float")
+            - face2.astype("float")
+        ) ** 2
+    )
+
+    # Convert MSE to similarity
+    mse_score = max(
         0,
-        100
+        100 - (mse / 65025) * 100
     )
 
-    return float(score)
+    # Weighted final score
+    final_score = (
+        0.45 * histogram_score
+        + 0.45 * correlation_score
+        + 0.10 * mse_score
+    )
+
+    final_score = float(
+        np.clip(
+            final_score,
+            0,
+            100
+        )
+    )
+
+    raw_distance = float(
+        1 - (final_score / 100)
+    )
+
+    return final_score, raw_distance
 
 
-def _verify_deepface(
+def verify_faces(
     doc_face: np.ndarray,
-    live_face: np.ndarray
+    live_face: np.ndarray,
+    prefer_engine: str = "auto"
 ) -> FaceMatchResult:
     """
-    Verify two faces using DeepFace.
+    Compare the face from the identity document with
+    the uploaded/live photo.
 
-    GhostFaceNet is used because it is lighter than Facenet512
-    and better suited for limited-memory deployments.
+    Lightweight OpenCV implementation suitable for
+    Streamlit Cloud.
     """
 
     try:
 
-        from deepface import DeepFace
+        logger.info(
+            "Starting lightweight face verification..."
+        )
+
+        document_face, document_found = (
+            _extract_largest_face(doc_face)
+        )
+
+        live_detected_face, live_found = (
+            _extract_largest_face(live_face)
+        )
+
+        # Face detection failed
+        if not document_found or not live_found:
+
+            missing = []
+
+            if not document_found:
+                missing.append(
+                    "document image"
+                )
+
+            if not live_found:
+                missing.append(
+                    "live/uploaded photo"
+                )
+
+            return FaceMatchResult(
+
+                engine_used="OpenCV Haar Cascade",
+
+                face_found_in_document=
+                    document_found,
+
+                face_found_in_live_photo=
+                    live_found,
+
+                error=(
+                    "Face not detected in: "
+                    + ", ".join(missing)
+                )
+            )
+
+        # Compare detected faces
+        score, distance = _compare_faces(
+            document_face,
+            live_detected_face
+        )
 
         logger.info(
-            "Starting DeepFace verification using GhostFaceNet..."
-        )
-
-        result = DeepFace.verify(
-
-            img1_path=doc_face,
-
-            img2_path=live_face,
-
-            model_name="GhostFaceNet",
-
-            detector_backend="opencv",
-
-            enforce_detection=False,
-
-            align=True,
-
-            silent=True
-        )
-
-        distance = float(
-            result.get(
-                "distance",
-                1.0
-            )
-        )
-
-        threshold = float(
-            result.get(
-                "threshold",
-                0.4
-            )
-        )
-
-        verified = bool(
-            result.get(
-                "verified",
-                False
-            )
-        )
-
-        match_score = _calculate_score(
-            distance,
-            threshold
-        )
-
-        logger.info(
-            "Face verification completed | "
-            "Distance: %.4f | "
-            "Threshold: %.4f | "
-            "Score: %.2f | "
-            "Verified: %s",
-            distance,
-            threshold,
-            match_score,
-            verified
+            "Face verification completed. "
+            "Score: %.2f",
+            score
         )
 
         return FaceMatchResult(
 
-            engine_used="DeepFace (GhostFaceNet)",
+            engine_used="OpenCV Haar Cascade + Feature Comparison",
 
-            match_score=match_score,
+            match_score=score,
 
             face_found_in_document=True,
 
@@ -184,100 +294,12 @@ def _verify_deepface(
     except Exception as e:
 
         logger.exception(
-            "DeepFace verification failed"
+            "Face verification failed"
         )
 
         return FaceMatchResult(
 
-            engine_used="DeepFace (GhostFaceNet)",
+            engine_used="OpenCV",
 
             error=str(e)
         )
-
-
-def verify_faces(
-    doc_face: np.ndarray,
-    live_face: np.ndarray,
-    prefer_engine: str = "auto"
-) -> FaceMatchResult:
-    """
-    Compare the document face with the uploaded/live photo.
-
-    Parameters
-    ----------
-    doc_face:
-        RGB numpy image containing the face from the document.
-
-    live_face:
-        RGB numpy image containing the uploaded/live face.
-
-    prefer_engine:
-        Kept for compatibility with the rest of the pipeline.
-
-    Returns
-    -------
-    FaceMatchResult
-    """
-
-    logger.info(
-        "Running face verification..."
-    )
-
-    if doc_face is None:
-
-        return FaceMatchResult(
-
-            engine_used="none",
-
-            error="Document face image is missing."
-        )
-
-    if live_face is None:
-
-        return FaceMatchResult(
-
-            engine_used="none",
-
-            error="Live/uploaded face image is missing."
-        )
-
-    if not isinstance(
-        doc_face,
-        np.ndarray
-    ):
-
-        return FaceMatchResult(
-
-            engine_used="none",
-
-            error="Invalid document face format."
-        )
-
-    if not isinstance(
-        live_face,
-        np.ndarray
-    ):
-
-        return FaceMatchResult(
-
-            engine_used="none",
-
-            error="Invalid live face format."
-        )
-
-    if not _deepface_available():
-
-        return FaceMatchResult(
-
-            engine_used="none",
-
-            error=(
-                "DeepFace is unavailable. "
-                "Please check the requirements.txt file."
-            )
-        )
-
-    return _verify_deepface(
-        doc_face,
-        live_face
-    )

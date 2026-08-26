@@ -6,7 +6,4 @@ Pillow==10.4.0
 easyocr==1.7.1
 pytesseract==0.3.10
 
-deepface==0.0.93
-tf-keras==2.16.0
-
 pandas==2.2.2
