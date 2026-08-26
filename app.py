@@ -143,7 +143,7 @@ with tab1:
         # Step 5 — Face verification
         progress.progress(80, text="Step 5/6 — Verifying face match...")
         t0 = time.time()
-        face_result = verify_faces(doc_image, face_image, prefer_engine=_face_pref)
+        face_result = verify_faces(doc_image, face_image, prefer_engine="insightface")
         face_time = time.time() - t0
 
         # Step 6 — Risk scoring
