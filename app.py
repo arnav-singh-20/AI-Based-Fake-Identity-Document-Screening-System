@@ -240,9 +240,9 @@ with tab1:
         st.header("Tampering Detection (Error Level Analysis)")
         tcol1, tcol2 = st.columns(2)
         with tcol1:
-            st.image(doc_image, caption="Original document", use_container_width=True)
+            st.image(doc_image, caption="Original document", use_column_width=True)
         with tcol2:
-            st.image(tamper_result.heatmap_overlay, caption="ELA tamper heatmap overlay", use_container_width=True)
+            st.image(tamper_result.heatmap_overlay, caption="ELA tamper heatmap overlay", use_column_width=True)
         st.caption(
             f"Hotspot fraction: {tamper_result.hotspot_fraction*100:.1f}% of pixels · "
             f"Mean diff: {tamper_result.mean_diff:.1f} · Max diff: {tamper_result.max_diff:.1f} · "
@@ -262,9 +262,9 @@ with tab1:
         st.caption(f"Engine used: **{face_result.engine_used}** · {face_time:.2f}s")
         fvcol1, fvcol2 = st.columns(2)
         with fvcol1:
-            st.image(doc_image, caption="Document photo", use_container_width=True)
+            st.image(doc_image, caption="Document photo", use_column_width=True)
         with fvcol2:
-            st.image(face_image, caption="Live / uploaded photo", use_container_width=True)
+            st.image(face_image, caption="Live / uploaded photo", use_column_width=True)
 
         if face_result.match_score is not None:
             if face_result.match_score >= 70:
