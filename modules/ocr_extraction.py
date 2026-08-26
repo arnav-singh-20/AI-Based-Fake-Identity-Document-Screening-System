@@ -1,23 +1,13 @@
 """
 Step 2 — OCR Extraction
 
-Reads a document image and extracts structured fields such as:
+Lightweight OCR extraction optimized for Streamlit Cloud.
 
-- Name
-- Date of Birth
-- Document Number
-- Nationality
-- Issue Date
-- Expiry Date
-- MRZ information
+Uses Tesseract as the primary OCR engine.
+EasyOCR is only attempted if Tesseract fails completely.
 
-The OCR pipeline:
-
-1. Preprocesses the document image
-2. Tries Tesseract and EasyOCR
-3. Uses the result containing the most detected text
-4. Extracts MRZ information
-5. Extracts structured fields using keywords and regex
+This prevents unnecessary EasyOCR/PyTorch model downloads and
+reduces memory usage during deployment.
 """
 
 import re
@@ -33,105 +23,82 @@ from utils.mrz_utils import parse_mrz, MRZResult
 logger = logging.getLogger(__name__)
 
 
+# --------------------------------------------------
+# ENGINE STATE
+# --------------------------------------------------
+
 _EASYOCR_READER = None
 _EASYOCR_AVAILABLE = None
 _TESSERACT_AVAILABLE = None
 
 
-# ============================================================
+# --------------------------------------------------
 # ENGINE AVAILABILITY
-# ============================================================
-
-def _easyocr_available() -> bool:
-
-    global _EASYOCR_AVAILABLE
-
-    if _EASYOCR_AVAILABLE is None:
-
-        try:
-
-            import easyocr  # noqa: F401
-
-            _EASYOCR_AVAILABLE = True
-
-            logger.info("EasyOCR is available.")
-
-        except Exception as e:
-
-            logger.warning(
-                "EasyOCR unavailable: %s",
-                e
-            )
-
-            _EASYOCR_AVAILABLE = False
-
-    return _EASYOCR_AVAILABLE
-
+# --------------------------------------------------
 
 def _tesseract_available() -> bool:
-
     global _TESSERACT_AVAILABLE
 
     if _TESSERACT_AVAILABLE is None:
-
         try:
-
             import pytesseract
 
             pytesseract.get_tesseract_version()
 
             _TESSERACT_AVAILABLE = True
-
             logger.info("Tesseract is available.")
 
         except Exception as e:
-
-            logger.warning(
-                "Tesseract unavailable: %s",
-                e
-            )
-
+            logger.warning("Tesseract unavailable: %s", e)
             _TESSERACT_AVAILABLE = False
 
     return _TESSERACT_AVAILABLE
 
 
-# ============================================================
-# EASY OCR
-# ============================================================
+def _easyocr_available() -> bool:
+    global _EASYOCR_AVAILABLE
+
+    if _EASYOCR_AVAILABLE is None:
+        try:
+            import easyocr  # noqa: F401
+
+            _EASYOCR_AVAILABLE = True
+            logger.info("EasyOCR is available.")
+
+        except Exception as e:
+            logger.warning("EasyOCR unavailable: %s", e)
+            _EASYOCR_AVAILABLE = False
+
+    return _EASYOCR_AVAILABLE
+
 
 def _get_easyocr_reader():
-
     global _EASYOCR_READER
 
     if _EASYOCR_READER is None:
-
         import easyocr
 
-        logger.info(
-            "Loading EasyOCR model..."
-        )
+        logger.info("Loading EasyOCR model...")
 
         _EASYOCR_READER = easyocr.Reader(
             ["en"],
-            gpu=False
+            gpu=False,
+            verbose=False
         )
 
     return _EASYOCR_READER
 
 
-# ============================================================
-# RESULT OBJECT
-# ============================================================
+# --------------------------------------------------
+# RESULT CLASS
+# --------------------------------------------------
 
 @dataclass
 class OCRResult:
 
     engine_used: str
 
-    raw_lines: list = field(
-        default_factory=list
-    )
+    raw_lines: list = field(default_factory=list)
 
     full_text: str = ""
 
@@ -152,132 +119,49 @@ class OCRResult:
     error: Optional[str] = None
 
 
-# ============================================================
-# IMAGE PREPROCESSING
-# ============================================================
+# --------------------------------------------------
+# OCR ENGINES
+# --------------------------------------------------
 
-def _preprocess_image(
-    image: np.ndarray
-) -> np.ndarray:
-
-    """
-    Preprocess image before OCR.
-
-    Improves OCR performance for:
-    - Low contrast documents
-    - Small text
-    - Slightly dark images
-    """
-
-    import cv2
-
-    if image is None:
-
-        raise ValueError(
-            "OCR received an empty image."
-        )
-
-    if image.size == 0:
-
-        raise ValueError(
-            "OCR received an invalid image."
-        )
-
-    # Convert RGB to grayscale
-    if image.ndim == 3:
-
-        gray = cv2.cvtColor(
-            image,
-            cv2.COLOR_RGB2GRAY
-        )
-
-    else:
-
-        gray = image.copy()
-
-    # Upscale small images
-    height, width = gray.shape[:2]
-
-    if width < 1200:
-
-        scale = 2
-
-        gray = cv2.resize(
-            gray,
-            None,
-            fx=scale,
-            fy=scale,
-            interpolation=cv2.INTER_CUBIC
-        )
-
-    # Mild denoising
-    gray = cv2.GaussianBlur(
-        gray,
-        (3, 3),
-        0
-    )
-
-    # Improve contrast
-    clahe = cv2.createCLAHE(
-        clipLimit=2.0,
-        tileGridSize=(8, 8)
-    )
-
-    processed = clahe.apply(
-        gray
-    )
-
-    return processed
-
-
-# ============================================================
-# TESSERACT
-# ============================================================
-
-def _run_tesseract(
-    image: np.ndarray
-) -> list[str]:
+def _run_tesseract(image: np.ndarray) -> list[str]:
 
     import pytesseract
     from PIL import Image
 
-    pil_img = Image.fromarray(
-        image
-    )
+    if image is None or image.size == 0:
+        return []
 
-    # PSM 6 = assume block of text
-    text = pytesseract.image_to_string(
-        pil_img,
-        config="--oem 3 --psm 6"
-    )
+    try:
+        pil_image = Image.fromarray(image)
 
-    lines = []
+        text = pytesseract.image_to_string(
+            pil_image,
+            config="--oem 3 --psm 6"
+        )
 
-    for line in text.splitlines():
+        lines = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+        ]
 
-        line = line.strip()
+        logger.info(
+            "Tesseract detected %d lines.",
+            len(lines)
+        )
 
-        if line:
+        return lines
 
-            lines.append(
-                line
-            )
+    except Exception as e:
 
-    logger.info(
-        "Tesseract detected %d lines.",
-        len(lines)
-    )
+        logger.exception(
+            "Tesseract OCR failed."
+        )
 
-    return lines
+        raise e
 
 
-# ============================================================
-# EASY OCR
-# ============================================================
-
-def _run_easyocr(
-    image: np.ndarray
-) -> list[str]:
+def _run_easyocr(image: np.ndarray) -> list[str]:
 
     reader = _get_easyocr_reader()
 
@@ -288,9 +172,9 @@ def _run_easyocr(
     )
 
     lines = [
-        str(result).strip()
-        for result in results
-        if str(result).strip()
+        str(item).strip()
+        for item in results
+        if str(item).strip()
     ]
 
     logger.info(
@@ -301,9 +185,9 @@ def _run_easyocr(
     return lines
 
 
-# ============================================================
-# REGEX PATTERNS
-# ============================================================
+# --------------------------------------------------
+# FIELD EXTRACTION
+# --------------------------------------------------
 
 _DATE_RE = re.compile(
     r"\b("
@@ -315,80 +199,60 @@ _DATE_RE = re.compile(
 
 
 _DOC_NUM_RE = re.compile(
-    r"\b("
-    r"[A-Z]{1,2}\d{6,9}"
-    r"|"
-    r"\d{9,12}"
-    r")\b"
+    r"\b([A-Z]{1,2}\d{6,9}|\d{9,12})\b"
 )
 
 
 _NAME_KEYWORDS = (
-    "full name",
-    "given names",
-    "given name",
+    "name",
     "surname",
-    "name"
+    "given name",
+    "given names",
 )
-
 
 _DOB_KEYWORDS = (
     "date of birth",
-    "birth date",
     "birth",
-    "dob"
+    "dob",
 )
-
 
 _NATIONALITY_KEYWORDS = (
     "nationality",
-    "nation"
+    "nation",
 )
-
 
 _DOCNUM_KEYWORDS = (
-    "passport number",
     "passport no",
-    "document number",
     "document no",
-    "id number",
+    "document number",
     "id no",
     "number",
-    "no."
 )
-
 
 _ISSUE_KEYWORDS = (
     "date of issue",
     "issue date",
-    "issued",
-    "issue"
+    "issue",
 )
-
 
 _EXPIRY_KEYWORDS = (
     "date of expiry",
     "expiry date",
-    "expiration date",
+    "expiration",
     "expiry",
-    "expiration"
 )
 
-
-# ============================================================
-# FIELD EXTRACTION
-# ============================================================
 
 def _extract_field_near_keyword(
     lines: list[str],
     keywords: tuple[str, ...],
-    pattern: Optional[re.Pattern] = None
+    pattern: Optional[re.Pattern] = None,
 ) -> Optional[str]:
 
     sorted_keywords = sorted(
         keywords,
         key=len,
-        reverse=True
+        reverse=True,
     )
 
     lowered_lines = [
@@ -396,28 +260,26 @@ def _extract_field_near_keyword(
         for line in lines
     ]
 
-    for i, lowered_line in enumerate(
-        lowered_lines
-    ):
+    for i, lower_line in enumerate(lowered_lines):
 
         matched_keyword = None
 
         for keyword in sorted_keywords:
 
-            if keyword in lowered_line:
+            if keyword in lower_line:
 
                 matched_keyword = keyword
-
                 break
 
         if not matched_keyword:
-
             continue
 
         original_line = lines[i]
 
-        # Try regex on same line
-        if pattern:
+        # Try extracting regex match
+        # from the same line.
+
+        if pattern is not None:
 
             match = pattern.search(
                 original_line
@@ -427,33 +289,31 @@ def _extract_field_near_keyword(
 
                 return match.group(0)
 
-        # Extract text after keyword
-        position = lowered_line.find(
+        # Extract text after keyword.
+
+        index = lower_line.find(
             matched_keyword
         )
 
-        if position != -1:
+        if index != -1:
 
-            remainder = original_line[
-                position + len(matched_keyword):
-            ]
+            value = original_line[
+                index + len(matched_keyword):
+            ].strip(" :-")
 
-            remainder = remainder.strip(
-                " :-|."
-            )
+            if value:
 
-            if remainder:
+                return value
 
-                return remainder
+        # Try next line.
 
-        # Try next line
         if i + 1 < len(lines):
 
             next_line = lines[
                 i + 1
             ].strip()
 
-            if pattern:
+            if pattern is not None:
 
                 match = pattern.search(
                     next_line
@@ -470,217 +330,163 @@ def _extract_field_near_keyword(
     return None
 
 
-# ============================================================
-# MAIN OCR FUNCTION
-# ============================================================
+# --------------------------------------------------
+# MAIN OCR PIPELINE
+# --------------------------------------------------
 
 def extract_fields(
     image: np.ndarray,
-    prefer_engine: str = "auto"
+    prefer_engine: str = "auto",
 ) -> OCRResult:
-
-    """
-    Run OCR on document image.
-
-    The image is preprocessed first.
-
-    Both OCR engines are attempted when possible,
-    and the engine producing the most text is selected.
-    """
 
     logger.info(
         "Starting OCR extraction..."
     )
 
-    try:
+    lines: list[str] = []
 
-        processed_image = _preprocess_image(
-            image
-        )
-
-    except Exception as e:
-
-        logger.exception(
-            "Image preprocessing failed."
-        )
-
-        return OCRResult(
-            engine_used="none",
-            error=f"Image preprocessing failed: {e}"
-        )
-
-
-    # --------------------------------------------------------
-    # Decide engine order
-    # --------------------------------------------------------
-
-    if prefer_engine == "easyocr":
-
-        engines = [
-            "easyocr",
-            "tesseract"
-        ]
-
-    elif prefer_engine == "tesseract":
-
-        engines = [
-            "tesseract",
-            "easyocr"
-        ]
-
-    else:
-
-        engines = [
-            "tesseract",
-            "easyocr"
-        ]
-
-
-    best_lines = []
-
-    best_engine = None
+    engine_used = "none"
 
     last_error = None
 
 
-    # --------------------------------------------------------
-    # Run OCR engines
-    # --------------------------------------------------------
+    # ==============================================
+    # STEP 1: TRY TESSERACT FIRST
+    # ==============================================
 
-    for engine in engines:
+    if (
+        prefer_engine in ("auto", "tesseract")
+        and _tesseract_available()
+    ):
 
         try:
 
-            if (
-                engine == "tesseract"
-                and _tesseract_available()
-            ):
+            lines = _run_tesseract(
+                image
+            )
 
-                lines = _run_tesseract(
-                    processed_image
-                )
+            logger.info(
+                "Tesseract returned %d lines.",
+                len(lines)
+            )
 
-                logger.info(
-                    "Tesseract returned %d lines.",
-                    len(lines)
-                )
+            # IMPORTANT:
+            # If Tesseract got text, STOP HERE.
+            # Do NOT load EasyOCR.
 
+            if lines:
 
-            elif (
-                engine == "easyocr"
-                and _easyocr_available()
-            ):
-
-                lines = _run_easyocr(
-                    processed_image
-                )
-
-                logger.info(
-                    "EasyOCR returned %d lines.",
-                    len(lines)
-                )
-
-            else:
-
-                continue
-
-
-            # Keep the OCR result with more text
-            if len(lines) > len(best_lines):
-
-                best_lines = lines
-
-                best_engine = engine
-
-
-            # If OCR found useful text,
-            # continue checking the other engine
-            # for potentially better results.
+                engine_used = "Tesseract"
 
         except Exception as e:
 
+            last_error = str(e)
+
             logger.warning(
-                "%s OCR failed: %s",
-                engine,
-                e
+                "Tesseract failed: %s",
+                e,
             )
+
+
+    # ==============================================
+    # STEP 2: EASYOCR ONLY IF TESSERACT GOT NOTHING
+    # ==============================================
+
+    if (
+        not lines
+        and prefer_engine != "tesseract"
+        and _easyocr_available()
+    ):
+
+        try:
+
+            logger.info(
+                "Tesseract returned no text. "
+                "Trying EasyOCR fallback..."
+            )
+
+            lines = _run_easyocr(
+                image
+            )
+
+            if lines:
+
+                engine_used = "EasyOCR"
+
+        except Exception as e:
 
             last_error = str(e)
 
+            logger.warning(
+                "EasyOCR failed: %s",
+                e,
+            )
 
-    # --------------------------------------------------------
-    # No OCR text found
-    # --------------------------------------------------------
 
-    if not best_lines:
+    # ==============================================
+    # NO OCR RESULT
+    # ==============================================
+
+    if not lines:
 
         return OCRResult(
-
             engine_used="none",
-
-            raw_lines=[],
-
-            full_text="",
-
             error=(
                 last_error
-                or
-                "OCR completed but no readable text "
-                "was detected."
-            )
+                or "OCR could not extract text."
+            ),
         )
 
 
-    # --------------------------------------------------------
-    # Prepare OCR result
-    # --------------------------------------------------------
+    # ==============================================
+    # PROCESS OCR RESULT
+    # ==============================================
 
     full_text = "\n".join(
-        best_lines
+        lines
     )
-
 
     logger.info(
-        "OCR completed using %s. "
-        "Detected %d lines.",
-        best_engine,
-        len(best_lines)
+        "OCR completed using %s.",
+        engine_used,
     )
 
 
-    # --------------------------------------------------------
-    # MRZ EXTRACTION
-    # --------------------------------------------------------
+    # MRZ extraction
 
-    mrz = parse_mrz(
-        best_lines
-    )
+    try:
 
+        mrz = parse_mrz(
+            lines
+        )
 
-    engine_display = (
-        "EasyOCR"
-        if best_engine == "easyocr"
-        else "Tesseract"
-    )
+    except Exception as e:
+
+        logger.warning(
+            "MRZ parsing failed: %s",
+            e,
+        )
+
+        mrz = None
 
 
     result = OCRResult(
 
-        engine_used=engine_display,
+        engine_used=engine_used,
 
-        raw_lines=best_lines,
+        raw_lines=lines,
 
         full_text=full_text,
 
-        mrz=mrz
+        mrz=mrz,
     )
 
 
-    # --------------------------------------------------------
-    # MRZ FIELDS
-    # --------------------------------------------------------
+    # ==============================================
+    # PREFER MRZ DATA
+    # ==============================================
 
-    if mrz and mrz.found:
+    if mrz is not None and mrz.found:
 
         result.document_number = (
             mrz.document_number
@@ -703,22 +509,22 @@ def extract_fields(
                 None,
                 [
                     mrz.given_names,
-                    mrz.surname
-                ]
+                    mrz.surname,
+                ],
             )
         ) or None
 
 
-    # --------------------------------------------------------
-    # KEYWORD / REGEX FALLBACK
-    # --------------------------------------------------------
+    # ==============================================
+    # FALLBACK FIELD EXTRACTION
+    # ==============================================
 
     if not result.name:
 
         result.name = (
             _extract_field_near_keyword(
-                best_lines,
-                _NAME_KEYWORDS
+                lines,
+                _NAME_KEYWORDS,
             )
         )
 
@@ -727,9 +533,9 @@ def extract_fields(
 
         result.date_of_birth = (
             _extract_field_near_keyword(
-                best_lines,
+                lines,
                 _DOB_KEYWORDS,
-                _DATE_RE
+                _DATE_RE,
             )
         )
 
@@ -738,9 +544,9 @@ def extract_fields(
 
         result.document_number = (
             _extract_field_near_keyword(
-                best_lines,
+                lines,
                 _DOCNUM_KEYWORDS,
-                _DOC_NUM_RE
+                _DOC_NUM_RE,
             )
         )
 
@@ -749,8 +555,8 @@ def extract_fields(
 
         result.nationality = (
             _extract_field_near_keyword(
-                best_lines,
-                _NATIONALITY_KEYWORDS
+                lines,
+                _NATIONALITY_KEYWORDS,
             )
         )
 
@@ -759,9 +565,9 @@ def extract_fields(
 
         result.issue_date = (
             _extract_field_near_keyword(
-                best_lines,
+                lines,
                 _ISSUE_KEYWORDS,
-                _DATE_RE
+                _DATE_RE,
             )
         )
 
@@ -770,11 +576,15 @@ def extract_fields(
 
         result.expiry_date = (
             _extract_field_near_keyword(
-                best_lines,
+                lines,
                 _EXPIRY_KEYWORDS,
-                _DATE_RE
+                _DATE_RE,
             )
         )
 
+
+    logger.info(
+        "OCR extraction finished successfully."
+    )
 
     return result
