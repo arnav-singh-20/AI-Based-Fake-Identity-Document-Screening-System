@@ -1,226 +1,197 @@
 """
 Step 5 — Face Verification
 
-Compares the face from the document with the uploaded/live photo.
+Compares the face extracted from the document with the uploaded/live
+traveler photo.
 
-Uses DeepFace with lazy loading and CPU-friendly settings.
-InsightFace is used as an optional fallback if available.
+Uses DeepFace with a lightweight model and lazy initialization.
+
+Designed to run on CPU-only environments such as Streamlit Cloud.
 
 Outputs a Face-Match Score (0-100).
 """
 
+import os
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 
+# Reduce TensorFlow logs and unnecessary GPU initialization noise
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 logger = logging.getLogger(__name__)
 
 _DEEPFACE_AVAILABLE = None
-_INSIGHTFACE_AVAILABLE = None
-
-
-def _deepface_available() -> bool:
-    global _DEEPFACE_AVAILABLE
-
-    if _DEEPFACE_AVAILABLE is None:
-        try:
-            from deepface import DeepFace  # noqa: F401
-            _DEEPFACE_AVAILABLE = True
-        except Exception as e:
-            logger.warning("DeepFace unavailable: %s", e)
-            _DEEPFACE_AVAILABLE = False
-
-    return _DEEPFACE_AVAILABLE
-
-
-def _insightface_available() -> bool:
-    global _INSIGHTFACE_AVAILABLE
-
-    if _INSIGHTFACE_AVAILABLE is None:
-        try:
-            import insightface  # noqa: F401
-            _INSIGHTFACE_AVAILABLE = True
-        except Exception as e:
-            logger.warning("InsightFace unavailable: %s", e)
-            _INSIGHTFACE_AVAILABLE = False
-
-    return _INSIGHTFACE_AVAILABLE
 
 
 @dataclass
 class FaceMatchResult:
     engine_used: str
+
     match_score: Optional[float] = None
+
     face_found_in_document: bool = False
+
     face_found_in_live_photo: bool = False
+
     raw_distance: Optional[float] = None
+
     error: Optional[str] = None
+
+
+def _deepface_available() -> bool:
+    """
+    Check whether DeepFace is installed.
+    """
+
+    global _DEEPFACE_AVAILABLE
+
+    if _DEEPFACE_AVAILABLE is None:
+
+        try:
+            from deepface import DeepFace  # noqa: F401
+
+            _DEEPFACE_AVAILABLE = True
+
+        except Exception as e:
+
+            logger.warning(
+                "DeepFace unavailable: %s",
+                e
+            )
+
+            _DEEPFACE_AVAILABLE = False
+
+    return _DEEPFACE_AVAILABLE
+
+
+def _calculate_score(
+    distance: float,
+    threshold: float
+) -> float:
+    """
+    Convert DeepFace distance into a 0-100 similarity score.
+
+    Lower distance means higher similarity.
+    """
+
+    if threshold <= 0:
+        threshold = 0.4
+
+    score = 1.0 - (
+        distance / (threshold * 2)
+    )
+
+    score = np.clip(
+        score * 100,
+        0,
+        100
+    )
+
+    return float(score)
 
 
 def _verify_deepface(
     doc_face: np.ndarray,
     live_face: np.ndarray
 ) -> FaceMatchResult:
+    """
+    Verify two faces using DeepFace.
 
-    from deepface import DeepFace
+    GhostFaceNet is used because it is lighter than Facenet512
+    and better suited for limited-memory deployments.
+    """
 
     try:
-        logger.info("Starting DeepFace verification...")
+
+        from deepface import DeepFace
+
+        logger.info(
+            "Starting DeepFace verification using GhostFaceNet..."
+        )
 
         result = DeepFace.verify(
+
             img1_path=doc_face,
+
             img2_path=live_face,
 
-            # Lighter model than Facenet512
             model_name="GhostFaceNet",
 
-            # Fastest/simple detector
             detector_backend="opencv",
 
             enforce_detection=False,
 
-            # Explicitly disable optional features
             align=True,
-            normalization="base",
+
+            silent=True
         )
 
-        distance = float(result.get("distance", 1.0))
-        threshold = float(result.get("threshold", 0.4))
-
-        verified = bool(result.get("verified", False))
-
-        # Convert distance into a display score
-        similarity = max(
-            0.0,
-            min(
-                1.0,
-                1.0 - (distance / max(threshold * 2, 0.0001))
+        distance = float(
+            result.get(
+                "distance",
+                1.0
             )
         )
 
-        match_score = similarity * 100
+        threshold = float(
+            result.get(
+                "threshold",
+                0.4
+            )
+        )
+
+        verified = bool(
+            result.get(
+                "verified",
+                False
+            )
+        )
+
+        match_score = _calculate_score(
+            distance,
+            threshold
+        )
 
         logger.info(
-            "DeepFace verification completed. "
-            "Distance: %.4f | Score: %.2f",
+            "Face verification completed | "
+            "Distance: %.4f | "
+            "Threshold: %.4f | "
+            "Score: %.2f | "
+            "Verified: %s",
             distance,
-            match_score
+            threshold,
+            match_score,
+            verified
         )
 
         return FaceMatchResult(
-            engine_used="DeepFace (VGG-Face)",
-            match_score=float(match_score),
-            face_found_in_document=True,
-            face_found_in_live_photo=True,
-            raw_distance=distance,
-        )
 
-    except Exception as e:
+            engine_used="DeepFace (GhostFaceNet)",
 
-        logger.exception("DeepFace verification failed")
-
-        return FaceMatchResult(
-            engine_used="DeepFace (VGG-Face)",
-            error=str(e),
-        )
-
-
-def _cosine_similarity(
-    a: np.ndarray,
-    b: np.ndarray
-) -> float:
-
-    a = a.flatten()
-    b = b.flatten()
-
-    denominator = np.linalg.norm(a) * np.linalg.norm(b)
-
-    if denominator == 0:
-        return 0.0
-
-    return float(np.dot(a, b) / denominator)
-
-
-def _verify_insightface(
-    doc_face: np.ndarray,
-    live_face: np.ndarray
-) -> FaceMatchResult:
-
-    try:
-        import cv2
-        from insightface.app import FaceAnalysis
-
-        logger.info("Starting InsightFace verification...")
-
-        app = FaceAnalysis(
-            providers=["CPUExecutionProvider"]
-        )
-
-        app.prepare(
-            ctx_id=-1,
-            det_size=(320, 320)
-        )
-
-        doc_bgr = cv2.cvtColor(
-            doc_face,
-            cv2.COLOR_RGB2BGR
-        )
-
-        live_bgr = cv2.cvtColor(
-            live_face,
-            cv2.COLOR_RGB2BGR
-        )
-
-        doc_faces = app.get(doc_bgr)
-        live_faces = app.get(live_bgr)
-
-        if not doc_faces or not live_faces:
-
-            return FaceMatchResult(
-                engine_used="InsightFace",
-                face_found_in_document=bool(doc_faces),
-                face_found_in_live_photo=bool(live_faces),
-                error="Face not detected in one or both images.",
-            )
-
-        doc = max(
-            doc_faces,
-            key=lambda f: (f.bbox[2] - f.bbox[0])
-            * (f.bbox[3] - f.bbox[1])
-        )
-
-        live = max(
-            live_faces,
-            key=lambda f: (f.bbox[2] - f.bbox[0])
-            * (f.bbox[3] - f.bbox[1])
-        )
-
-        similarity = _cosine_similarity(
-            doc.normed_embedding,
-            live.normed_embedding
-        )
-
-        match_score = float(
-            np.clip(similarity * 100, 0, 100)
-        )
-
-        return FaceMatchResult(
-            engine_used="InsightFace",
             match_score=match_score,
+
             face_found_in_document=True,
+
             face_found_in_live_photo=True,
-            raw_distance=float(1 - similarity),
+
+            raw_distance=distance
         )
 
     except Exception as e:
 
-        logger.exception("InsightFace verification failed")
+        logger.exception(
+            "DeepFace verification failed"
+        )
 
         return FaceMatchResult(
-            engine_used="InsightFace",
-            error=str(e),
+
+            engine_used="DeepFace (GhostFaceNet)",
+
+            error=str(e)
         )
 
 
@@ -229,76 +200,84 @@ def verify_faces(
     live_face: np.ndarray,
     prefer_engine: str = "auto"
 ) -> FaceMatchResult:
+    """
+    Compare the document face with the uploaded/live photo.
+
+    Parameters
+    ----------
+    doc_face:
+        RGB numpy image containing the face from the document.
+
+    live_face:
+        RGB numpy image containing the uploaded/live face.
+
+    prefer_engine:
+        Kept for compatibility with the rest of the pipeline.
+
+    Returns
+    -------
+    FaceMatchResult
+    """
 
     logger.info(
-        "Running face verification using preference: %s",
-        prefer_engine
+        "Running face verification..."
     )
 
-    if prefer_engine == "insightface":
-        engines = ["insightface", "deepface"]
+    if doc_face is None:
 
-    elif prefer_engine == "deepface":
-        engines = ["deepface", "insightface"]
+        return FaceMatchResult(
 
-    else:
-        engines = ["deepface", "insightface"]
+            engine_used="none",
 
-    last_error = None
+            error="Document face image is missing."
+        )
 
-    for engine in engines:
+    if live_face is None:
 
-        try:
+        return FaceMatchResult(
 
-            if (
-                engine == "deepface"
-                and _deepface_available()
-            ):
+            engine_used="none",
 
-                logger.info(
-                    "Running face verification using DeepFace..."
-                )
+            error="Live/uploaded face image is missing."
+        )
 
-                result = _verify_deepface(
-                    doc_face,
-                    live_face
-                )
+    if not isinstance(
+        doc_face,
+        np.ndarray
+    ):
 
-                if result.match_score is not None:
-                    return result
+        return FaceMatchResult(
 
-                last_error = result.error
+            engine_used="none",
 
-            elif (
-                engine == "insightface"
-                and _insightface_available()
-            ):
+            error="Invalid document face format."
+        )
 
-                logger.info(
-                    "Running face verification using InsightFace..."
-                )
+    if not isinstance(
+        live_face,
+        np.ndarray
+    ):
 
-                result = _verify_insightface(
-                    doc_face,
-                    live_face
-                )
+        return FaceMatchResult(
 
-                if result.match_score is not None:
-                    return result
+            engine_used="none",
 
-                last_error = result.error
+            error="Invalid live face format."
+        )
 
-        except Exception as e:
+    if not _deepface_available():
 
-            logger.exception(
-                "Face verification engine %s failed",
-                engine
+        return FaceMatchResult(
+
+            engine_used="none",
+
+            error=(
+                "DeepFace is unavailable. "
+                "Please check the requirements.txt file."
             )
+        )
 
-            last_error = str(e)
-
-    return FaceMatchResult(
-        engine_used="none",
-        error=last_error
-        or "No face verification engine is available.",
+    return _verify_deepface(
+        doc_face,
+        live_face
     )

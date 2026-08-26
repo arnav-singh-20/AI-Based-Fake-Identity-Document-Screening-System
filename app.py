@@ -42,7 +42,7 @@ with st.sidebar:
 
     st.subheader("Engines")
     ocr_engine = st.selectbox("OCR engine", ["auto (EasyOCR → Tesseract)", "easyocr", "tesseract"], index=0)
-    face_engine = st.selectbox("Face verification engine", ["auto (DeepFace → InsightFace)", "deepface", "insightface"], index=0)
+    face_engine = st.selectbox("Face verification engine",["Lightweight OpenCV"],index=0)
 
     st.subheader("Risk Scoring Weights")
     st.caption("Face-match and tamper detection are weighted more heavily — they're harder to fake convincingly than field validation.")
@@ -66,7 +66,7 @@ with st.sidebar:
     st.divider()
 
 _ocr_pref = {"auto (EasyOCR → Tesseract)": "auto", "easyocr": "easyocr", "tesseract": "tesseract"}[ocr_engine]
-_face_pref = {"auto (DeepFace → InsightFace)": "auto", "deepface": "deepface", "insightface": "insightface"}[face_engine]
+_face_pref = "opencv"
 
 # Main UI
 st.title("AI-Based Fake Identity & Document Screening System")
@@ -143,7 +143,7 @@ with tab1:
         # Step 5 — Face verification
         progress.progress(80, text="Step 5/6 — Verifying face match...")
         t0 = time.time()
-        face_result = verify_faces(doc_image, face_image, prefer_engine="insightface")
+        face_result = verify_faces(doc_image, face_image, prefer_engine=_face_pref)
         face_time = time.time() - t0
 
         # Step 6 — Risk scoring
