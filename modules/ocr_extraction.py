@@ -166,7 +166,7 @@ def extract_fields(image: np.ndarray, prefer_engine: str = "auto") -> OCRResult:
     elif prefer_engine == "tesseract":
         order = ["tesseract", "easyocr"]
     else:
-        order = ["easyocr", "tesseract"]
+        order = ["tesseract", "easyocr"]
 
     for engine in order:
         try:
